@@ -1,0 +1,22 @@
+[package]
+name = "lib-plugin-host"
+version.workspace = true
+edition.workspace = true
+license = "MIT"
+authors.workspace = true
+description = "Plugin host for loading and managing plugins"
+repository = "https://github.com/adi-family/lib-plugin"
+keywords = ["plugin", "host", "dynamic-loading", "ffi"]
+categories = ["development-tools"]
+
+[dependencies]
+lib-plugin-abi.workspace = true
+lib-plugin-manifest.workspace = true
+lib-plugin-verify.workspace = true
+lib-plugin-registry.workspace = true
+abi_stable.workspace = true
+libloading.workspace = true
+tokio.workspace = true
+thiserror.workspace = true
+dirs.workspace = true
+tracing.workspace = true
