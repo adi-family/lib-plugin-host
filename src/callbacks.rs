@@ -236,3 +236,21 @@ extern "C" fn bridge_lookup_service_versioned(
 extern "C" fn bridge_list_services() -> RVec<ServiceDescriptor> {
     with_service_registry(|sr| sr.list().into_iter().collect()).unwrap_or_else(RVec::new)
 }
+
+/// Get the current ServiceRegistry from the thread-local.
+///
+/// This is only valid during plugin callback execution (e.g., in plugin_init,
+/// handle_message, or service invocations). Returns None if called outside
+/// of a plugin callback context.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// // Inside a plugin's handle_message:
+/// if let Some(registry) = lib_plugin_host::current_service_registry() {
+///     let adi = Adi::open_with_plugins(path, registry).await?;
+/// }
+/// ```
+pub fn current_service_registry() -> Option<Arc<ServiceRegistry>> {
+    CURRENT_SERVICE_REGISTRY.with(|s| s.borrow().clone())
+}
