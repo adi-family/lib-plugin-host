@@ -145,11 +145,23 @@ impl PluginHost {
                 path.clone()
             };
 
-            // Try to load manifest
+            // Try to load manifest - skip plugins with invalid manifests rather than failing
             let manifest = if plugin_path.join("package.toml").exists() {
-                Manifest::from_file(&plugin_path.join("package.toml"))?
+                match Manifest::from_file(&plugin_path.join("package.toml")) {
+                    Ok(m) => m,
+                    Err(e) => {
+                        eprintln!("Warning: Skipping plugin {:?}: {}", path.file_name(), e);
+                        continue;
+                    }
+                }
             } else if plugin_path.join("plugin.toml").exists() {
-                Manifest::from_file(&plugin_path.join("plugin.toml"))?
+                match Manifest::from_file(&plugin_path.join("plugin.toml")) {
+                    Ok(m) => m,
+                    Err(e) => {
+                        eprintln!("Warning: Skipping plugin {:?}: {}", path.file_name(), e);
+                        continue;
+                    }
+                }
             } else {
                 continue;
             };
