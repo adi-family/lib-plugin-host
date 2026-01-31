@@ -21,29 +21,9 @@ pub enum HostError {
     #[error("Plugin not installed: {0}")]
     NotInstalled(String),
 
-    /// Plugin already enabled
-    #[error("Plugin already enabled: {0}")]
-    AlreadyEnabled(String),
-
-    /// Plugin not enabled
-    #[error("Plugin not enabled: {0}")]
-    NotEnabled(String),
-
     /// Failed to load plugin library
     #[error("Failed to load plugin: {0}")]
     LoadFailed(String),
-
-    /// Plugin entry symbol not found
-    #[error("Plugin entry symbol not found: {0}")]
-    SymbolNotFound(String),
-
-    /// Invalid plugin vtable
-    #[error("Invalid plugin vtable")]
-    InvalidVTable,
-
-    /// Incompatible API version
-    #[error("Incompatible API version: expected {expected}, got {actual}")]
-    IncompatibleApiVersion { expected: u32, actual: u32 },
 
     /// Plugin initialization failed
     #[error("Plugin initialization failed: {0}")]
@@ -69,33 +49,9 @@ pub enum HostError {
     #[error("Platform not supported: {0}")]
     PlatformNotSupported(String),
 
-    /// Signature verification failed
-    #[error("Signature verification failed: {0}")]
-    SignatureInvalid(String),
-
-    /// Circular dependency detected
-    #[error("Circular dependency detected: {0}")]
-    CircularDependency(String),
-
-    /// Dependency not found
-    #[error("Dependency not found: {0}")]
-    DependencyNotFound(String),
-
-    /// Required service not available
-    #[error("Required service not available: {service} - {error}")]
-    ServiceNotAvailable { service: String, error: String },
-
-    /// Dependency failed to load
-    #[error("Dependency '{dependency}' failed to load for plugin '{plugin}': {error}")]
-    DependencyLoadFailed {
-        plugin: String,
-        dependency: String,
-        error: String,
-    },
-
-    /// Service registration failed
-    #[error("Service registration failed: {0}")]
-    ServiceRegistrationFailed(String),
+    /// Plugin error from v3 ABI
+    #[error("Plugin error: {0}")]
+    Plugin(#[from] lib_plugin_abi_v3::PluginError),
 }
 
 /// Alias for PluginError - used internally for v3 plugin loading

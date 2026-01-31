@@ -4,22 +4,19 @@ version.workspace = true
 edition.workspace = true
 license = "MIT"
 authors.workspace = true
-description = "Plugin host for loading and managing plugins"
+description = "Plugin host for loading and managing v3 plugins"
 repository = "https://github.com/adi-family/lib-plugin"
-keywords = ["plugin", "host", "dynamic-loading", "ffi"]
+keywords = ["plugin", "host", "dynamic-loading"]
 categories = ["development-tools"]
 
 [dependencies]
-lib-plugin-abi.workspace = true
 lib-plugin-abi-v3 = { path = "../lib-plugin-abi-v3" }
 lib-plugin-manifest.workspace = true
 lib-plugin-verify.workspace = true
 lib-plugin-registry.workspace = true
-abi_stable.workspace = true
 libloading.workspace = true
 tokio.workspace = true
 thiserror.workspace = true
 dirs.workspace = true
 tracing.workspace = true
-anyhow = "1.0"
 serde_json = "1.0"

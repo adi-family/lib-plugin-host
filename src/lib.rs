@@ -1,13 +1,14 @@
-//! Plugin host for loading and managing plugins.
+//! Plugin host for loading and managing v3 plugins.
 //!
 //! This is the main integration crate that applications use to load,
-//! manage, and interact with plugins.
+//! manage, and interact with plugins using the v3 plugin ABI.
 //!
 //! # Example
 //!
 //! ```rust,ignore
-//! use lib_plugin_host::{PluginHost, PluginConfig};
+//! use lib_plugin_host::{PluginManagerV3, LoadedPluginV3, PluginConfig};
 //! use std::path::PathBuf;
+//! use std::sync::Arc;
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -20,45 +21,40 @@
 //!         host_version: "1.0.0".into(),
 //!     };
 //!
-//!     let mut host = PluginHost::new(config)?;
-//!     host.scan_installed()?;
+//!     config.ensure_dirs()?;
 //!
-//!     // Install a plugin
-//!     host.install_plugin("vendor.plugin", "1.0.0").await?;
+//!     let mut manager = PluginManagerV3::new();
 //!
-//!     // Enable it
-//!     host.enable("vendor.plugin")?;
+//!     // Load a plugin
+//!     let manifest = lib_plugin_manifest::PluginManifest::from_file("plugin.toml")?;
+//!     let loaded = LoadedPluginV3::load(manifest, &config.plugins_dir).await?;
+//!     manager.register(loaded)?;
+//!
+//!     // Set as current for plugin-to-plugin access
+//!     let manager = Arc::new(manager);
+//!     lib_plugin_host::set_current_plugin_manager(manager.clone());
 //!
 //!     Ok(())
 //! }
 //! ```
 
-mod callbacks;
 mod config;
 mod error;
-mod host;
 mod installed;
-mod loader;
-mod service_registry;
 
 // V3 plugin support
 mod loader_v3;
 mod manager_v3;
 
-pub use callbacks::*;
 pub use config::*;
 pub use error::*;
-pub use host::*;
 pub use installed::*;
-pub use loader::*;
-pub use service_registry::*;
 
 // V3 exports
 pub use loader_v3::*;
 pub use manager_v3::*;
 
 // Re-export dependencies for convenience
-pub use lib_plugin_abi;
 pub use lib_plugin_abi_v3;
 pub use lib_plugin_manifest;
 pub use lib_plugin_registry;

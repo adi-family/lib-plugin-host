@@ -2,8 +2,41 @@
 
 use crate::LoadedPluginV3;
 use lib_plugin_abi_v3::*;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::Arc;
+
+// Thread-local storage for current plugin manager
+thread_local! {
+    static CURRENT_PLUGIN_MANAGER: RefCell<Option<Arc<PluginManagerV3>>> = const { RefCell::new(None) };
+}
+
+/// Set the current plugin manager in thread-local storage.
+///
+/// This should be called by the host before invoking plugin methods
+/// to allow plugins to access other plugins' services.
+pub fn set_current_plugin_manager(manager: Arc<PluginManagerV3>) {
+    CURRENT_PLUGIN_MANAGER.with(|m| {
+        *m.borrow_mut() = Some(manager);
+    });
+}
+
+/// Clear the current plugin manager from thread-local storage.
+pub fn clear_current_plugin_manager() {
+    CURRENT_PLUGIN_MANAGER.with(|m| {
+        *m.borrow_mut() = None;
+    });
+}
+
+/// Get the current plugin manager from thread-local storage.
+///
+/// This is available to plugins during execution to access other
+/// plugins' services (like language analyzers, embedders, etc.).
+///
+/// Returns `None` if no plugin manager is set (e.g., outside of plugin context).
+pub fn current_plugin_manager() -> Option<Arc<PluginManagerV3>> {
+    CURRENT_PLUGIN_MANAGER.with(|m| m.borrow().clone())
+}
 
 /// Plugin manager for v3 plugins
 ///
@@ -18,6 +51,12 @@ pub struct PluginManagerV3 {
     mcp_tools: HashMap<String, Arc<dyn mcp::McpTools>>,
     mcp_resources: HashMap<String, Arc<dyn mcp::McpResources>>,
     mcp_prompts: HashMap<String, Arc<dyn mcp::McpPrompts>>,
+
+    // Language analyzer traits (keyed by language name, e.g., "rust", "python")
+    language_analyzers: HashMap<String, Arc<dyn lang::LanguageAnalyzer>>,
+
+    // Embedder trait (keyed by provider name, e.g., "fastembed", "openai")
+    embedders: HashMap<String, Arc<dyn embed::Embedder>>,
 
     // Orchestration traits
     runners: HashMap<String, Arc<dyn runner::Runner>>,
@@ -38,6 +77,8 @@ impl PluginManagerV3 {
             mcp_tools: HashMap::new(),
             mcp_resources: HashMap::new(),
             mcp_prompts: HashMap::new(),
+            language_analyzers: HashMap::new(),
+            embedders: HashMap::new(),
             runners: HashMap::new(),
             health_checks: HashMap::new(),
             env_providers: HashMap::new(),
@@ -169,6 +210,57 @@ impl PluginManagerV3 {
         self.rollout_strategies.get(strategy_type).cloned()
     }
 
+    /// Register a language analyzer plugin
+    pub fn register_language_analyzer(&mut self, language: impl Into<String>, plugin: Arc<dyn lang::LanguageAnalyzer>) {
+        self.language_analyzers.insert(language.into(), plugin);
+    }
+
+    /// Get a language analyzer plugin by language name (e.g., "rust", "python")
+    pub fn get_language_analyzer(&self, language: &str) -> Option<Arc<dyn lang::LanguageAnalyzer>> {
+        self.language_analyzers.get(language).cloned()
+    }
+
+    /// Get all language analyzer plugins
+    pub fn all_language_analyzers(&self) -> Vec<(String, Arc<dyn lang::LanguageAnalyzer>)> {
+        self.language_analyzers
+            .iter()
+            .map(|(lang, plugin)| (lang.clone(), plugin.clone()))
+            .collect()
+    }
+
+    /// Check if a language analyzer is available for a language
+    pub fn has_language_analyzer(&self, language: &str) -> bool {
+        self.language_analyzers.contains_key(language)
+    }
+
+    /// Register an embedder plugin
+    pub fn register_embedder(&mut self, provider: impl Into<String>, plugin: Arc<dyn embed::Embedder>) {
+        self.embedders.insert(provider.into(), plugin);
+    }
+
+    /// Get an embedder plugin by provider name (e.g., "fastembed", "openai")
+    pub fn get_embedder(&self, provider: &str) -> Option<Arc<dyn embed::Embedder>> {
+        self.embedders.get(provider).cloned()
+    }
+
+    /// Get the default embedder (first available)
+    pub fn get_default_embedder(&self) -> Option<Arc<dyn embed::Embedder>> {
+        self.embedders.values().next().cloned()
+    }
+
+    /// Get all embedder plugins
+    pub fn all_embedders(&self) -> Vec<(String, Arc<dyn embed::Embedder>)> {
+        self.embedders
+            .iter()
+            .map(|(provider, plugin)| (provider.clone(), plugin.clone()))
+            .collect()
+    }
+
+    /// Check if any embedder is available
+    pub fn has_embedder(&self) -> bool {
+        !self.embedders.is_empty()
+    }
+
     /// Get a plugin by ID
     pub fn get_plugin(&self, plugin_id: &str) -> Option<Arc<dyn Plugin>> {
         self.plugins.get(plugin_id).cloned()
@@ -196,6 +288,8 @@ impl PluginManagerV3 {
         self.mcp_tools.clear();
         self.mcp_resources.clear();
         self.mcp_prompts.clear();
+        self.language_analyzers.clear();
+        self.embedders.clear();
         self.runners.clear();
         self.health_checks.clear();
         self.env_providers.clear();
