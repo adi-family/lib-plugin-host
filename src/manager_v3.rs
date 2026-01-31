@@ -55,14 +55,11 @@ impl PluginManagerV3 {
         // Store base plugin
         self.plugins.insert(plugin_id.clone(), plugin.clone());
 
-        // Try to downcast to service traits and register
-        // Note: This is a workaround. In real implementation, plugins would
-        // declare their provided services in the manifest.
-
-        // For now, we'll need plugins to implement a method that tells us
-        // what services they provide, or we check the manifest.
-
-        // TODO: Implement service registration based on manifest `provides` field
+        // Register CLI commands if available
+        if let Some(cli) = loaded.cli_commands {
+            self.cli_commands.insert(plugin_id.clone(), cli);
+            tracing::debug!("Registered CLI commands for plugin: {}", plugin_id);
+        }
 
         Ok(())
     }

@@ -1,7 +1,7 @@
 //! Plugin loader for v3 ABI (native async traits)
 
 use crate::PluginError;
-use lib_plugin_abi_v3::{Plugin, PluginContext, PluginMetadata};
+use lib_plugin_abi_v3::{cli::CliCommands, Plugin, PluginContext, PluginMetadata};
 use lib_plugin_manifest::PluginManifest;
 use libloading::{Library, Symbol};
 use std::path::{Path, PathBuf};
@@ -17,6 +17,9 @@ pub struct LoadedPluginV3 {
 
     /// Plugin instance
     pub plugin: Arc<dyn Plugin>,
+
+    /// Optional CLI commands trait object (if plugin provides CLI)
+    pub cli_commands: Option<Arc<dyn CliCommands>>,
 }
 
 impl LoadedPluginV3 {
@@ -49,10 +52,35 @@ impl LoadedPluginV3 {
         let result: lib_plugin_abi_v3::Result<()> = plugin.init(&ctx).await;
         result.map_err(|e| PluginError::InitFailed(format!("Plugin init failed: {}", e)))?;
 
+        // Try to get CLI commands if the plugin provides them
+        // Check manifest for CLI service declaration
+        let cli_commands: Option<Arc<dyn CliCommands>> = if manifest.cli.is_some()
+            || manifest.provides.iter().any(|s| s.id.ends_with(".cli"))
+        {
+            // Try to get plugin_create_cli symbol
+            let cli_fn: Result<Symbol<fn() -> Box<dyn CliCommands>>, _> =
+                unsafe { library.get(b"plugin_create_cli") };
+
+            if let Ok(cli_fn) = cli_fn {
+                Some(Arc::from(cli_fn()))
+            } else {
+                // Fallback: plugin doesn't export separate CLI, but may implement it
+                // This won't work without trait upcasting, so we log and skip
+                tracing::debug!(
+                    "Plugin {} declares CLI but doesn't export plugin_create_cli",
+                    manifest.plugin.id
+                );
+                None
+            }
+        } else {
+            None
+        };
+
         Ok(Self {
             manifest,
             _library: library,
             plugin: Arc::from(plugin),
+            cli_commands,
         })
     }
 
