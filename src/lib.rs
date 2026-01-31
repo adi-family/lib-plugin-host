@@ -41,6 +41,10 @@ mod installed;
 mod loader;
 mod service_registry;
 
+// V3 plugin support
+mod loader_v3;
+mod manager_v3;
+
 pub use callbacks::*;
 pub use config::*;
 pub use error::*;
@@ -49,8 +53,13 @@ pub use installed::*;
 pub use loader::*;
 pub use service_registry::*;
 
+// V3 exports
+pub use loader_v3::*;
+pub use manager_v3::*;
+
 // Re-export dependencies for convenience
 pub use lib_plugin_abi;
+pub use lib_plugin_abi_v3;
 pub use lib_plugin_manifest;
 pub use lib_plugin_registry;
 pub use lib_plugin_verify;
