@@ -1,6 +1,6 @@
 //! Plugin manager for v3 ABI
 
-use crate::{LoadedPluginV3, PluginError, Result};
+use crate::LoadedPluginV3;
 use lib_plugin_abi_v3::*;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -48,7 +48,7 @@ impl PluginManagerV3 {
     }
 
     /// Register a loaded plugin
-    pub fn register(&mut self, loaded: LoadedPluginV3) -> Result<()> {
+    pub fn register(&mut self, loaded: LoadedPluginV3) -> lib_plugin_abi_v3::Result<()> {
         let plugin_id = loaded.metadata().id.clone();
         let plugin = loaded.plugin;
 
@@ -186,7 +186,7 @@ impl PluginManagerV3 {
     }
 
     /// Unload all plugins
-    pub async fn shutdown_all(&mut self) -> Result<()> {
+    pub async fn shutdown_all(&mut self) -> lib_plugin_abi_v3::Result<()> {
         for (_id, plugin) in self.plugins.drain() {
             if let Err(e) = plugin.shutdown().await {
                 eprintln!("Error shutting down plugin: {}", e);

@@ -1,6 +1,6 @@
 //! Plugin loader for v3 ABI (native async traits)
 
-use crate::{PluginError, Result};
+use crate::PluginError;
 use lib_plugin_abi_v3::{Plugin, PluginContext, PluginMetadata};
 use lib_plugin_manifest::PluginManifest;
 use libloading::{Library, Symbol};
@@ -21,7 +21,7 @@ pub struct LoadedPluginV3 {
 
 impl LoadedPluginV3 {
     /// Load a plugin from a dynamic library
-    pub async fn load(manifest: PluginManifest, plugin_dir: &Path) -> Result<Self> {
+    pub async fn load(manifest: PluginManifest, plugin_dir: &Path) -> crate::Result<Self> {
         // Resolve binary path
         let lib_path = resolve_plugin_binary(&manifest, plugin_dir)?;
 
@@ -46,10 +46,8 @@ impl LoadedPluginV3 {
         let ctx = create_plugin_context(&manifest)?;
 
         // Initialize plugin
-        plugin
-            .init(&ctx)
-            .await
-            .map_err(|e| PluginError::InitFailed(format!("Plugin init failed: {}", e)))?;
+        let result: lib_plugin_abi_v3::Result<()> = plugin.init(&ctx).await;
+        result.map_err(|e| PluginError::InitFailed(format!("Plugin init failed: {}", e)))?;
 
         Ok(Self {
             manifest,
@@ -64,12 +62,12 @@ impl LoadedPluginV3 {
     }
 
     /// Shutdown and unload the plugin
-    pub async fn unload(self) -> Result<()> {
+    pub async fn unload(self) -> crate::Result<()> {
         // Call shutdown
         self.plugin
             .shutdown()
             .await
-            .map_err(|e| PluginError::Other(anyhow::anyhow!("Shutdown failed: {}", e)))?;
+            .map_err(|e| PluginError::InitFailed(format!("Shutdown failed: {}", e)))?;
 
         // Drop plugin instance
         drop(self.plugin);
@@ -80,12 +78,8 @@ impl LoadedPluginV3 {
 }
 
 /// Resolve plugin binary path
-fn resolve_plugin_binary(manifest: &PluginManifest, plugin_dir: &Path) -> Result<PathBuf> {
-    let binary_name = manifest
-        .binary
-        .as_ref()
-        .and_then(|b| b.name.as_deref())
-        .unwrap_or("plugin");
+fn resolve_plugin_binary(manifest: &PluginManifest, plugin_dir: &Path) -> crate::Result<PathBuf> {
+    let binary_name = &manifest.binary.name;
 
     // Try platform-specific names
     let candidates = if cfg!(target_os = "macos") {
@@ -101,9 +95,9 @@ fn resolve_plugin_binary(manifest: &PluginManifest, plugin_dir: &Path) -> Result
     } else if cfg!(target_os = "windows") {
         vec![format!("{}.dll", binary_name)]
     } else {
-        return Err(PluginError::Other(anyhow::anyhow!(
-            "Unsupported platform"
-        )));
+        return Err(PluginError::PlatformNotSupported(
+            std::env::consts::OS.to_string()
+        ));
     };
 
     for candidate in candidates {
@@ -113,25 +107,25 @@ fn resolve_plugin_binary(manifest: &PluginManifest, plugin_dir: &Path) -> Result
         }
     }
 
-    Err(PluginError::NotFound(format!(
+    Err(PluginError::PluginNotFound(format!(
         "Plugin binary not found in {:?}",
         plugin_dir
     )))
 }
 
 /// Create plugin context
-fn create_plugin_context(manifest: &PluginManifest) -> Result<PluginContext> {
+fn create_plugin_context(manifest: &PluginManifest) -> crate::Result<PluginContext> {
     let plugin_id = manifest.plugin.id.clone();
 
     // Data directory: ~/.local/share/adi/<plugin-id>/
     let data_dir = dirs::data_local_dir()
-        .ok_or_else(|| PluginError::Other(anyhow::anyhow!("Cannot determine data directory")))?
+        .ok_or_else(|| PluginError::InitFailed("Cannot determine data directory".to_string()))?
         .join("adi")
         .join(&plugin_id);
 
     // Config directory: ~/.config/adi/<plugin-id>/
     let config_dir = dirs::config_dir()
-        .ok_or_else(|| PluginError::Other(anyhow::anyhow!("Cannot determine config directory")))?
+        .ok_or_else(|| PluginError::InitFailed("Cannot determine config directory".to_string()))?
         .join("adi")
         .join(&plugin_id);
 
@@ -143,7 +137,8 @@ fn create_plugin_context(manifest: &PluginManifest) -> Result<PluginContext> {
     let config_path = config_dir.join("config.json");
     let config = if config_path.exists() {
         let content = std::fs::read_to_string(&config_path)?;
-        serde_json::from_str(&content)?
+        serde_json::from_str(&content)
+            .map_err(|e| PluginError::InitFailed(format!("Failed to parse config: {}", e)))?
     } else {
         serde_json::json!({})
     };

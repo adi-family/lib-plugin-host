@@ -97,3 +97,9 @@ pub enum HostError {
     #[error("Service registration failed: {0}")]
     ServiceRegistrationFailed(String),
 }
+
+/// Alias for PluginError - used internally for v3 plugin loading
+pub type PluginError = HostError;
+
+/// Result type for plugin host operations
+pub type Result<T> = std::result::Result<T, HostError>;
