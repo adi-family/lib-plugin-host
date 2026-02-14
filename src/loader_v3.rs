@@ -1,7 +1,7 @@
 //! Plugin loader for v3 ABI (native async traits)
 
 use crate::PluginError;
-use lib_plugin_abi_v3::{cli::CliCommands, Plugin, PluginContext, PluginMetadata};
+use lib_plugin_abi_v3::{cli::CliCommands, logs::LogProvider, Plugin, PluginContext, PluginMetadata};
 use lib_plugin_manifest::PluginManifest;
 use libloading::{Library, Symbol};
 use std::path::{Path, PathBuf};
@@ -20,6 +20,9 @@ pub struct LoadedPluginV3 {
 
     /// Optional CLI commands trait object (if plugin provides CLI)
     pub cli_commands: Option<Arc<dyn CliCommands>>,
+
+    /// Optional log provider trait object (if plugin provides log streaming)
+    pub log_provider: Option<Arc<dyn LogProvider>>,
 }
 
 impl LoadedPluginV3 {
@@ -76,11 +79,24 @@ impl LoadedPluginV3 {
             None
         };
 
+        // Try to get LogProvider if the plugin provides it
+        let log_provider: Option<Arc<dyn LogProvider>> = {
+            let log_fn: Result<Symbol<fn() -> Box<dyn LogProvider>>, _> =
+                unsafe { library.get(b"plugin_create_log_provider") };
+
+            if let Ok(log_fn) = log_fn {
+                Some(Arc::from(log_fn()))
+            } else {
+                None
+            }
+        };
+
         Ok(Self {
             manifest,
             _library: library,
             plugin: Arc::from(plugin),
             cli_commands,
+            log_provider,
         })
     }
 

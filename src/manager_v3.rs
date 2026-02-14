@@ -65,6 +65,9 @@ pub struct PluginManagerV3 {
     proxy_middleware: HashMap<String, Arc<dyn proxy::ProxyMiddleware>>,
     obs_sinks: HashMap<String, Arc<dyn obs::ObservabilitySink>>,
     rollout_strategies: HashMap<String, Arc<dyn rollout::RolloutStrategy>>,
+
+    // Log streaming
+    log_providers: HashMap<String, Arc<dyn logs::LogProvider>>,
 }
 
 impl PluginManagerV3 {
@@ -85,6 +88,7 @@ impl PluginManagerV3 {
             proxy_middleware: HashMap::new(),
             obs_sinks: HashMap::new(),
             rollout_strategies: HashMap::new(),
+            log_providers: HashMap::new(),
         }
     }
 
@@ -100,6 +104,12 @@ impl PluginManagerV3 {
         if let Some(cli) = loaded.cli_commands {
             self.cli_commands.insert(plugin_id.clone(), cli);
             tracing::debug!("Registered CLI commands for plugin: {}", plugin_id);
+        }
+
+        // Register log provider if available
+        if let Some(log_provider) = loaded.log_provider {
+            self.log_providers.insert(plugin_id.clone(), log_provider);
+            tracing::debug!("Registered log provider for plugin: {}", plugin_id);
         }
 
         Ok(())
@@ -210,6 +220,16 @@ impl PluginManagerV3 {
         self.rollout_strategies.get(strategy_type).cloned()
     }
 
+    /// Register a log provider plugin
+    pub fn register_log_provider(&mut self, plugin_id: impl Into<String>, plugin: Arc<dyn logs::LogProvider>) {
+        self.log_providers.insert(plugin_id.into(), plugin);
+    }
+
+    /// Get a log provider plugin
+    pub fn get_log_provider(&self, plugin_id: &str) -> Option<Arc<dyn logs::LogProvider>> {
+        self.log_providers.get(plugin_id).cloned()
+    }
+
     /// Register a language analyzer plugin
     pub fn register_language_analyzer(&mut self, language: impl Into<String>, plugin: Arc<dyn lang::LanguageAnalyzer>) {
         self.language_analyzers.insert(language.into(), plugin);
@@ -296,6 +316,7 @@ impl PluginManagerV3 {
         self.proxy_middleware.clear();
         self.obs_sinks.clear();
         self.rollout_strategies.clear();
+        self.log_providers.clear();
 
         Ok(())
     }
