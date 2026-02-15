@@ -192,7 +192,9 @@ impl PluginInstaller {
             tracing::warn!(plugin_id = %id, error = %e, "Failed to update latest symlink");
         }
 
-        // Update command index symlinks (point through latest/)
+        // Update command index: remove old symlinks first (handles renamed/removed commands),
+        // then create new ones from the current manifest.
+        let _ = crate::command_index::remove_command_symlinks(&self.install_dir, id);
         if let Err(e) =
             crate::command_index::create_command_symlinks(&self.install_dir, id, &info.version)
         {
