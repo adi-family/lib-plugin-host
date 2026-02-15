@@ -112,6 +112,10 @@ impl PluginInstaller {
         while let Some(entry) = entries.next_entry().await? {
             let path = entry.path();
             if path.is_dir() {
+                // Skip the command index directory
+                if entry.file_name() == crate::command_index::COMMANDS_DIR_NAME {
+                    continue;
+                }
                 let version_file = path.join(".version");
                 if version_file.exists() {
                     let version = tokio::fs::read_to_string(&version_file).await?;
@@ -180,6 +184,20 @@ impl PluginInstaller {
         // Set executable permissions on Unix
         #[cfg(unix)]
         set_unix_permissions(&plugin_dir).await;
+
+        // Update latest symlink (points to current version directory)
+        if let Err(e) =
+            crate::command_index::update_latest_link(&self.install_dir, id, &info.version)
+        {
+            tracing::warn!(plugin_id = %id, error = %e, "Failed to update latest symlink");
+        }
+
+        // Update command index symlinks (point through latest/)
+        if let Err(e) =
+            crate::command_index::create_command_symlinks(&self.install_dir, id, &info.version)
+        {
+            tracing::warn!(plugin_id = %id, error = %e, "Failed to create command symlinks");
+        }
 
         Ok(InstallResult {
             id: id.to_string(),
@@ -269,6 +287,8 @@ impl PluginInstaller {
         }
 
         // Remove old version directory
+        // Note: command symlinks don't need removal — they point through latest/
+        // which install() will re-point to the new version.
         let old_dir = self.install_dir.join(id).join(&current);
         if old_dir.exists() {
             tokio::fs::remove_dir_all(&old_dir).await?;
@@ -285,6 +305,11 @@ impl PluginInstaller {
         let plugin_dir = self.install_dir.join(id);
         if !plugin_dir.exists() {
             return Err(HostError::NotInstalled(id.to_string()));
+        }
+
+        // Remove command index symlinks before removing plugin directory
+        if let Err(e) = crate::command_index::remove_command_symlinks(&self.install_dir, id) {
+            tracing::warn!(plugin_id = %id, error = %e, "Failed to remove command symlinks");
         }
 
         tokio::fs::remove_dir_all(&plugin_dir).await?;

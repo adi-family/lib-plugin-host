@@ -38,6 +38,7 @@
 //! }
 //! ```
 
+pub mod command_index;
 mod config;
 mod error;
 mod installed;
