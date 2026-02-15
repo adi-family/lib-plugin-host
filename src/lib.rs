@@ -41,6 +41,7 @@
 mod config;
 mod error;
 mod installed;
+mod installer;
 
 // V3 plugin support
 mod loader_v3;
@@ -49,6 +50,7 @@ mod manager_v3;
 pub use config::*;
 pub use error::*;
 pub use installed::*;
+pub use installer::*;
 
 // V3 exports
 pub use loader_v3::*;
