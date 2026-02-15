@@ -75,15 +75,29 @@ impl PluginConfig {
     }
 }
 
+impl PluginConfig {
+    /// Default plugins installation directory (`<data_local_dir>/adi/plugins`).
+    pub fn default_plugins_dir() -> PathBuf {
+        dirs::data_local_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("adi")
+            .join("plugins")
+    }
+
+    /// Default registry cache directory (`<cache_dir>/adi/registry-cache`).
+    pub fn default_cache_dir() -> PathBuf {
+        dirs::cache_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("adi")
+            .join("registry-cache")
+    }
+}
+
 impl Default for PluginConfig {
     fn default() -> Self {
-        // Use platform-appropriate default directories
-        let data_dir = dirs::data_dir().unwrap_or_else(|| PathBuf::from("."));
-        let cache_dir = dirs::cache_dir().unwrap_or_else(|| PathBuf::from("."));
-
         Self {
-            plugins_dir: data_dir.join("plugins"),
-            cache_dir: cache_dir.join("plugins"),
+            plugins_dir: Self::default_plugins_dir(),
+            cache_dir: Self::default_cache_dir(),
             registry_url: None,
             require_signatures: false,
             trusted_keys: Vec::new(),
