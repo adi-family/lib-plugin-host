@@ -48,10 +48,6 @@ pub struct PluginManagerV3 {
     /// Service-specific lookups
     cli_commands: HashMap<String, Arc<dyn cli::CliCommands>>,
     http_routes: HashMap<String, Arc<dyn http::HttpRoutes>>,
-    mcp_tools: HashMap<String, Arc<dyn mcp::McpTools>>,
-    mcp_resources: HashMap<String, Arc<dyn mcp::McpResources>>,
-    mcp_prompts: HashMap<String, Arc<dyn mcp::McpPrompts>>,
-
     // Language analyzer traits (keyed by language name, e.g., "rust", "python")
     language_analyzers: HashMap<String, Arc<dyn lang::LanguageAnalyzer>>,
 
@@ -68,6 +64,9 @@ pub struct PluginManagerV3 {
 
     // Log streaming
     log_providers: HashMap<String, Arc<dyn logs::LogProvider>>,
+
+    // Daemon services
+    daemon_services: HashMap<String, Arc<dyn daemon::DaemonService>>,
 }
 
 impl PluginManagerV3 {
@@ -77,9 +76,6 @@ impl PluginManagerV3 {
             plugins: HashMap::new(),
             cli_commands: HashMap::new(),
             http_routes: HashMap::new(),
-            mcp_tools: HashMap::new(),
-            mcp_resources: HashMap::new(),
-            mcp_prompts: HashMap::new(),
             language_analyzers: HashMap::new(),
             embedders: HashMap::new(),
             runners: HashMap::new(),
@@ -89,6 +85,7 @@ impl PluginManagerV3 {
             obs_sinks: HashMap::new(),
             rollout_strategies: HashMap::new(),
             log_providers: HashMap::new(),
+            daemon_services: HashMap::new(),
         }
     }
 
@@ -110,6 +107,12 @@ impl PluginManagerV3 {
         if let Some(log_provider) = loaded.log_provider {
             self.log_providers.insert(plugin_id.clone(), log_provider);
             tracing::debug!("Registered log provider for plugin: {}", plugin_id);
+        }
+
+        // Register daemon service if available
+        if let Some(daemon_service) = loaded.daemon_service {
+            self.daemon_services.insert(plugin_id.clone(), daemon_service);
+            tracing::debug!("Registered daemon service for plugin: {}", plugin_id);
         }
 
         Ok(())
@@ -156,19 +159,6 @@ impl PluginManagerV3 {
     /// Get all HTTP routes plugins
     pub fn all_http_routes(&self) -> Vec<(String, Arc<dyn http::HttpRoutes>)> {
         self.http_routes
-            .iter()
-            .map(|(id, plugin)| (id.clone(), plugin.clone()))
-            .collect()
-    }
-
-    /// Get an MCP tools plugin
-    pub fn get_mcp_tools(&self, plugin_id: &str) -> Option<Arc<dyn mcp::McpTools>> {
-        self.mcp_tools.get(plugin_id).cloned()
-    }
-
-    /// Get all MCP tools plugins
-    pub fn all_mcp_tools(&self) -> Vec<(String, Arc<dyn mcp::McpTools>)> {
-        self.mcp_tools
             .iter()
             .map(|(id, plugin)| (id.clone(), plugin.clone()))
             .collect()
@@ -228,6 +218,24 @@ impl PluginManagerV3 {
     /// Get a log provider plugin
     pub fn get_log_provider(&self, plugin_id: &str) -> Option<Arc<dyn logs::LogProvider>> {
         self.log_providers.get(plugin_id).cloned()
+    }
+
+    /// Register a daemon service plugin
+    pub fn register_daemon_service(&mut self, plugin_id: impl Into<String>, service: Arc<dyn daemon::DaemonService>) {
+        self.daemon_services.insert(plugin_id.into(), service);
+    }
+
+    /// Get a daemon service plugin
+    pub fn get_daemon_service(&self, plugin_id: &str) -> Option<Arc<dyn daemon::DaemonService>> {
+        self.daemon_services.get(plugin_id).cloned()
+    }
+
+    /// Get all daemon service plugins
+    pub fn all_daemon_services(&self) -> Vec<(String, Arc<dyn daemon::DaemonService>)> {
+        self.daemon_services
+            .iter()
+            .map(|(id, service)| (id.clone(), service.clone()))
+            .collect()
     }
 
     /// Register a language analyzer plugin
@@ -305,9 +313,6 @@ impl PluginManagerV3 {
         // Clear all service registries
         self.cli_commands.clear();
         self.http_routes.clear();
-        self.mcp_tools.clear();
-        self.mcp_resources.clear();
-        self.mcp_prompts.clear();
         self.language_analyzers.clear();
         self.embedders.clear();
         self.runners.clear();
@@ -317,6 +322,7 @@ impl PluginManagerV3 {
         self.obs_sinks.clear();
         self.rollout_strategies.clear();
         self.log_providers.clear();
+        self.daemon_services.clear();
 
         Ok(())
     }

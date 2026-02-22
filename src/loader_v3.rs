@@ -1,9 +1,10 @@
 //! Plugin loader for v3 ABI (native async traits)
 
 use crate::PluginError;
-use lib_plugin_abi_v3::{cli::CliCommands, logs::LogProvider, Plugin, PluginContext, PluginMetadata};
+use lib_plugin_abi_v3::{cli::CliCommands, daemon::DaemonService, logs::LogProvider, Plugin, PluginContext, PluginMetadata, PLUGIN_API_VERSION};
 use lib_plugin_manifest::PluginManifest;
 use libloading::{Library, Symbol};
+use std::panic::AssertUnwindSafe;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -23,20 +24,78 @@ pub struct LoadedPluginV3 {
 
     /// Optional log provider trait object (if plugin provides log streaming)
     pub log_provider: Option<Arc<dyn LogProvider>>,
+
+    /// Optional daemon service trait object (if plugin provides daemon)
+    pub daemon_service: Option<Arc<dyn DaemonService>>,
 }
 
 impl LoadedPluginV3 {
-    /// Load a plugin from a dynamic library
+    /// Load a plugin from a dynamic library.
+    ///
+    /// Checks the plugin's ABI version before calling any trait methods.
+    /// Wraps the load in `catch_unwind` and a timeout to guard against
+    /// broken or ABI-incompatible plugins that crash or hang.
     pub async fn load(manifest: PluginManifest, plugin_dir: &Path) -> crate::Result<Self> {
-        // Resolve binary path
         let lib_path = resolve_plugin_binary(&manifest, plugin_dir)?;
+        let plugin_id = manifest.plugin.id.clone();
 
-        // Load library
-        let library = unsafe {
-            Library::new(&lib_path).map_err(|e| {
-                PluginError::InitFailed(format!("Failed to load library {:?}: {}", lib_path, e))
-            })?
+        // Wrap the entire loading sequence in a timeout (10s) so a hung
+        // dlopen / plugin_create / init cannot block the process forever.
+        let load_future = Self::load_inner(manifest, &lib_path, &plugin_id);
+        match tokio::time::timeout(std::time::Duration::from_secs(10), load_future).await {
+            Ok(result) => result,
+            Err(_) => Err(PluginError::InitFailed(format!(
+                "Plugin {} timed out during loading (>10s) — likely ABI-incompatible",
+                plugin_id
+            ))),
+        }
+    }
+
+    /// Inner loading logic, separated so the caller can wrap it in a timeout.
+    async fn load_inner(
+        manifest: PluginManifest,
+        lib_path: &Path,
+        plugin_id: &str,
+    ) -> crate::Result<Self> {
+        // Load library inside catch_unwind (dlopen can trigger constructors that panic)
+        let lib_path_owned = lib_path.to_path_buf();
+        let library = tokio::task::spawn_blocking({
+            let lib_path = lib_path_owned.clone();
+            move || {
+                std::panic::catch_unwind(AssertUnwindSafe(|| unsafe {
+                    Library::new(&lib_path)
+                }))
+            }
+        })
+        .await
+        .map_err(|e| PluginError::InitFailed(format!("Library load task panicked for {}: {}", plugin_id, e)))?
+        .map_err(|_| PluginError::InitFailed(format!("Library::new panicked for {} ({:?})", plugin_id, lib_path_owned)))?
+        .map_err(|e| PluginError::InitFailed(format!("Failed to load library {:?}: {}", lib_path_owned, e)))?;
+
+        // --- ABI version gate ---
+        // If the plugin exports `plugin_abi_version`, verify it matches the host.
+        // If the symbol is absent we allow loading (older plugins built before this check).
+        let abi_version: Option<u32> = unsafe {
+            library
+                .get::<extern "C" fn() -> u32>(b"plugin_abi_version")
+                .ok()
+                .map(|sym| sym())
         };
+
+        if let Some(version) = abi_version {
+            if version != PLUGIN_API_VERSION {
+                return Err(PluginError::InitFailed(format!(
+                    "ABI mismatch for {}: plugin exports v{}, host expects v{}. Reinstall the plugin.",
+                    plugin_id, version, PLUGIN_API_VERSION
+                )));
+            }
+            tracing::debug!(plugin_id, version, "ABI version check passed");
+        } else {
+            tracing::debug!(
+                plugin_id,
+                "Plugin does not export plugin_abi_version — skipping ABI check (legacy plugin)"
+            );
+        }
 
         // Get plugin_create symbol
         let create_fn: Symbol<fn() -> Box<dyn Plugin>> = unsafe {
@@ -45,8 +104,12 @@ impl LoadedPluginV3 {
                 .map_err(|e| PluginError::InitFailed(format!("Missing plugin_create symbol: {}", e)))?
         };
 
-        // Create plugin instance
-        let mut plugin = create_fn();
+        // Create plugin instance (catch panics from ABI-incompatible vtables)
+        let mut plugin = std::panic::catch_unwind(AssertUnwindSafe(|| create_fn()))
+            .map_err(|_| PluginError::InitFailed(format!(
+                "plugin_create panicked for {} — likely ABI-incompatible",
+                plugin_id
+            )))?;
 
         // Create plugin context
         let ctx = create_plugin_context(&manifest)?;
@@ -56,19 +119,19 @@ impl LoadedPluginV3 {
         result.map_err(|e| PluginError::InitFailed(format!("Plugin init failed: {}", e)))?;
 
         // Try to get CLI commands if the plugin provides them
-        // Check manifest for CLI service declaration
         let cli_commands: Option<Arc<dyn CliCommands>> = if manifest.cli.is_some()
             || manifest.provides.iter().any(|s| s.id.ends_with(".cli"))
         {
-            // Try to get plugin_create_cli symbol
             let cli_fn: Result<Symbol<fn() -> Box<dyn CliCommands>>, _> =
                 unsafe { library.get(b"plugin_create_cli") };
 
             if let Ok(cli_fn) = cli_fn {
-                Some(Arc::from(cli_fn()))
+                std::panic::catch_unwind(AssertUnwindSafe(|| Arc::from(cli_fn())))
+                    .map_err(|_| {
+                        tracing::warn!(plugin_id, "plugin_create_cli panicked");
+                    })
+                    .ok()
             } else {
-                // Fallback: plugin doesn't export separate CLI, but may implement it
-                // This won't work without trait upcasting, so we log and skip
                 tracing::debug!(
                     "Plugin {} declares CLI but doesn't export plugin_create_cli",
                     manifest.plugin.id
@@ -85,7 +148,27 @@ impl LoadedPluginV3 {
                 unsafe { library.get(b"plugin_create_log_provider") };
 
             if let Ok(log_fn) = log_fn {
-                Some(Arc::from(log_fn()))
+                std::panic::catch_unwind(AssertUnwindSafe(|| Arc::from(log_fn())))
+                    .map_err(|_| {
+                        tracing::warn!(plugin_id, "plugin_create_log_provider panicked");
+                    })
+                    .ok()
+            } else {
+                None
+            }
+        };
+
+        // Try to get DaemonService if the plugin provides it
+        let daemon_service: Option<Arc<dyn DaemonService>> = {
+            let daemon_fn: Result<Symbol<fn() -> Box<dyn DaemonService>>, _> =
+                unsafe { library.get(b"plugin_create_daemon_service") };
+
+            if let Ok(daemon_fn) = daemon_fn {
+                std::panic::catch_unwind(AssertUnwindSafe(|| Arc::from(daemon_fn())))
+                    .map_err(|_| {
+                        tracing::warn!(plugin_id, "plugin_create_daemon_service panicked");
+                    })
+                    .ok()
             } else {
                 None
             }
@@ -97,6 +180,7 @@ impl LoadedPluginV3 {
             plugin: Arc::from(plugin),
             cli_commands,
             log_provider,
+            daemon_service,
         })
     }
 
@@ -192,8 +276,6 @@ fn create_plugin_context(manifest: &PluginManifest) -> crate::Result<PluginConte
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_resolve_binary_name() {
         // Test platform-specific binary name resolution
