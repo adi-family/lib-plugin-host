@@ -60,5 +60,5 @@ pub use manager_v3::*;
 // Re-export dependencies for convenience
 pub use lib_plugin_abi_v3;
 pub use lib_plugin_manifest;
-pub use lib_plugin_registry;
+pub use registry_client;
 pub use lib_plugin_verify;

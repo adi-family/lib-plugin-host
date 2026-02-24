@@ -6,7 +6,7 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 use lib_plugin_manifest::PluginManifest;
-use lib_plugin_registry::{PluginEntry, PluginInfo, RegistryClient, SearchKind, SearchResults};
+use registry_client::{PluginEntry, PluginInfo, RegistryClient, SearchKind, SearchResults};
 
 use crate::HostError;
 
@@ -86,7 +86,7 @@ impl PluginInstaller {
     pub async fn get_plugin_info(&self, id: &str) -> Result<Option<PluginInfo>, HostError> {
         match self.client.get_plugin_latest(id).await {
             Ok(info) => Ok(Some(info)),
-            Err(lib_plugin_registry::RegistryError::NotFound(_)) => Ok(None),
+            Err(registry_client::RegistryError::NotFound(_)) => Ok(None),
             Err(e) => Err(e.into()),
         }
     }

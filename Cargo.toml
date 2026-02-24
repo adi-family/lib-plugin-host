@@ -13,7 +13,7 @@ categories = ["development-tools"]
 lib-plugin-abi-v3 = { path = "../lib-plugin-abi-v3" }
 lib-plugin-manifest.workspace = true
 lib-plugin-verify.workspace = true
-lib-plugin-registry.workspace = true
+registry-client.workspace = true
 libloading.workspace = true
 tokio.workspace = true
 thiserror.workspace = true
