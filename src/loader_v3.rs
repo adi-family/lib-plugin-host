@@ -1,7 +1,7 @@
 //! Plugin loader for v3 ABI (native async traits)
 
 use crate::PluginError;
-use lib_plugin_abi_v3::{cli::CliCommands, daemon::DaemonService, logs::LogProvider, Plugin, PluginContext, PluginMetadata, PLUGIN_API_VERSION};
+use lib_plugin_abi_v3::{cli::CliCommands, daemon::DaemonService, http::HttpRoutes, logs::LogProvider, Plugin, PluginContext, PluginMetadata, PLUGIN_API_VERSION};
 use lib_plugin_manifest::PluginManifest;
 use libloading::{Library, Symbol};
 use std::panic::AssertUnwindSafe;
@@ -27,6 +27,9 @@ pub struct LoadedPluginV3 {
 
     /// Optional daemon service trait object (if plugin provides daemon)
     pub daemon_service: Option<Arc<dyn DaemonService>>,
+
+    /// Optional HTTP routes trait object (if plugin provides HTTP endpoints)
+    pub http_routes: Option<Arc<dyn HttpRoutes>>,
 }
 
 impl LoadedPluginV3 {
@@ -174,6 +177,22 @@ impl LoadedPluginV3 {
             }
         };
 
+        // Try to get HttpRoutes if the plugin provides it
+        let http_routes: Option<Arc<dyn HttpRoutes>> = {
+            let http_fn: Result<Symbol<fn() -> Box<dyn HttpRoutes>>, _> =
+                unsafe { library.get(b"plugin_create_http") };
+
+            if let Ok(http_fn) = http_fn {
+                std::panic::catch_unwind(AssertUnwindSafe(|| Arc::from(http_fn())))
+                    .map_err(|_| {
+                        tracing::warn!(plugin_id, "plugin_create_http panicked");
+                    })
+                    .ok()
+            } else {
+                None
+            }
+        };
+
         Ok(Self {
             manifest,
             _library: library,
@@ -181,6 +200,7 @@ impl LoadedPluginV3 {
             cli_commands,
             log_provider,
             daemon_service,
+            http_routes,
         })
     }
 

@@ -115,6 +115,12 @@ impl PluginManagerV3 {
             tracing::debug!("Registered daemon service for plugin: {}", plugin_id);
         }
 
+        // Register HTTP routes if available
+        if let Some(http_routes) = loaded.http_routes {
+            self.http_routes.insert(plugin_id.clone(), http_routes);
+            tracing::debug!("Registered HTTP routes for plugin: {}", plugin_id);
+        }
+
         Ok(())
     }
 
